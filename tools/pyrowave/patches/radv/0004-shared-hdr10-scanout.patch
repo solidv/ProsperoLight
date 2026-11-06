@@ -119,7 +119,7 @@
     chain->base.image_count = num_images;
  
     for (uint32_t i = 0; i < num_images; i++) {
-@@ -1343,3 +1362,23 @@ wsi_ps5_release_videoout(void)
+@@ -1346,3 +1365,23 @@ wsi_ps5_release_videoout(void)
     mtx_unlock(&out->lock);
     return result;
  }

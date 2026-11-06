@@ -1,36 +1,6 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -78,7 +78,7 @@
- /* param.json's attribute3 bit for 120 Hz output. PS5_Vulkan R31/R92 declared it with 0x80000
-  * (a 120 Hz mode that requires VRR), which turns the system's VRR off; retail titles with VRR
-  * declare 0x40 with 0x40000. VideoOut itself grants mode 15 or refuses it. */
--#define VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE 0x40u
-+#define VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE PS5_VIDEOOUT_ATTRIBUTE_120HZ
- 
- #if !defined(__PROSPERO__)
- /* The host model: flips show at once and a vblank comes every millisecond,
-@@ -343,7 +343,10 @@ videoout_title_declares_high_frame_rate(void)
-    if (at == NULL || (at = strchr(at, ':')) == NULL)
-       return false;
-    const unsigned long value = strtoul(at + 1, NULL, 0);
--   return (value & VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE) == VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE;
-+   const bool declared = ps5_videoout_declares_hfr(value);
-+   fprintf(stderr, "wsi/videoout: title attribute3=%#lx hfr=%u vrr_declared=%u\n", value,
-+           declared, (value & PS5_VIDEOOUT_ATTRIBUTE_VRR_MASK) != 0);
-+   return declared;
- }
- 
- /* The refresh period: the median of a few intervals between vblank waits,
-@@ -413,7 +416,7 @@ videoout_open_locked(void)
-          supported > 0
-             ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_HIGH_FRAME_RATE, NULL, NULL, NULL)
-             : -1;
--      out->high_frame_rate = supported > 0 && configured == 0;
-+      out->high_frame_rate = ps5_videoout_hfr_accepted(supported, configured);
-       if (out->high_frame_rate && !out->prefer_vrr) {
-          const int peg = sceVideoOutVrrPegToFixedRate(out->handle, 0, 0);
-          fprintf(stderr, "wsi/videoout: peg request rc=%08x\n", (unsigned)peg);
-@@ -442,13 +445,22 @@ videoout_open_locked(void)
+@@ -442,13 +442,22 @@ videoout_open_locked(void)
                      "wsi/videoout: 119.88 Hz accepted; startup period %.3f ms; verify after scanout starts\n",
                      (double)period / 1e6);
           }
@@ -58,10 +28,10 @@
     }
     return true;
  }
-@@ -1338,8 +1350,10 @@ wsi_ps5_release_videoout(void)
-       int unregister_result = 0;
-       for (uint32_t i = 0; i < out->set_count; i++)
-          unregister_result |= sceVideoOutUnregisterBuffers(out->handle, (int32_t)i);
+@@ -1341,8 +1350,10 @@ wsi_ps5_release_videoout(void)
+          if (set_result != 0 && (uint32_t)set_result != PS5_VIDEO_OUT_ERROR_BUSY)
+             unregister_result = set_result;
+       }
 -      const int restore_result = out->high_frame_rate
 -         ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_RESTORE, NULL, NULL, NULL) : 0;
 +      /* Also restore when HFR was skipped/refused: the title can have opened
@@ -71,7 +41,7 @@
        if (restore_result == 0) {
           sceVideoOutWaitVblank(out->handle);
           sceVideoOutWaitVblank(out->handle);
-@@ -1372,6 +1386,8 @@ wsi_ps5_release_videoout(void)
+@@ -1375,6 +1386,8 @@ wsi_ps5_release_videoout(void)
     out->set_count = 0;
     out->handle = -1;
     out->opened = out->high_frame_rate = out->modes_settled = out->high_mode_offered = false;

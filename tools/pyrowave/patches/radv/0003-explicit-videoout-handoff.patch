@@ -49,7 +49,7 @@
        const struct wsi_videoout_present present = out->queue[out->queue_head];
        mtx_unlock(&out->lock);
  
-@@ -1261,3 +1267,79 @@ void
+@@ -1261,3 +1267,82 @@ void
  wsi_display_setup_syncobj_fd(struct wsi_device *wsi_device, int fd)
  {
  }
@@ -87,8 +87,11 @@
 +      while (videoout_shown_argument_locked() < out->flip_argument && os_time_get_nano() < deadline)
 +         sceVideoOutWaitVblank(out->handle);
 +      int unregister_result = 0;
-+      for (uint32_t i = 0; i < out->set_count; i++)
-+         unregister_result |= sceVideoOutUnregisterBuffers(out->handle, (int32_t)i);
++      for (uint32_t i = 0; i < out->set_count; i++) {
++         const int set_result = sceVideoOutUnregisterBuffers(out->handle, (int32_t)i);
++         if (set_result != 0 && (uint32_t)set_result != PS5_VIDEO_OUT_ERROR_BUSY)
++            unregister_result = set_result;
++      }
 +      const int restore_result = out->high_frame_rate
 +         ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_RESTORE, NULL, NULL, NULL) : 0;
 +      if (restore_result == 0) {
@@ -104,7 +107,7 @@
 +      }
 +      if (restore_result != 0)
 +         result = restore_result;
-+      if (unregister_result != 0 && unregister_result != PS5_VIDEO_OUT_ERROR_BUSY)
++      if (unregister_result != 0)
 +         result = unregister_result;
 +   }
 +   for (uint32_t i = 0; i < out->set_count; i++) {

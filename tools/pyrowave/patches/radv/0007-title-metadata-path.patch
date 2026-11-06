@@ -8,7 +8,7 @@
  
  #if defined(__PROSPERO__)
  #include <immintrin.h>
-@@ -326,27 +327,13 @@ struct wsi_videoout {
+@@ -326,24 +327,13 @@ struct wsi_videoout {
  
  /* --- VideoOut ------------------------------------------------------------ */
  
@@ -32,15 +32,12 @@
 -   if (at == NULL || (at = strchr(at, ':')) == NULL)
 -      return false;
 -   const unsigned long value = strtoul(at + 1, NULL, 0);
--   const bool declared = ps5_videoout_declares_hfr(value);
--   fprintf(stderr, "wsi/videoout: title attribute3=%#lx hfr=%u vrr_declared=%u\n", value,
--           declared, (value & PS5_VIDEOOUT_ATTRIBUTE_VRR_MASK) != 0);
--   return declared;
+-   return (value & VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE) == VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE;
 +   return ps5_title_declares_hfr(videoout_metadata_path) != 0;
  }
  
  /* The refresh period: the median of a few intervals between vblank waits,
-@@ -1398,8 +1385,8 @@ wsi_ps5_release_videoout(void)
+@@ -1398,8 +1388,8 @@ wsi_ps5_release_videoout(void)
  /* Application selects scanout semantics before creating a display surface.
   * Uses the same verified VideoOut format and HSYNC flip mode as VideoDec2.
   */
@@ -51,7 +48,7 @@
  {
     call_once(&videoout_once, videoout_output_init_once);
     struct wsi_videoout_output *out = &videoout_output;
-@@ -1408,6 +1395,11 @@ int wsi_ps5_configure_output(int hdr, int vsync, int high_refresh)
+@@ -1408,6 +1398,11 @@ int wsi_ps5_configure_output(int hdr, int vsync, int high_refresh)
        mtx_unlock(&out->lock);
        return -1;
     }

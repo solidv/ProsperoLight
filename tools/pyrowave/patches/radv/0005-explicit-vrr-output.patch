@@ -37,7 +37,7 @@
        if (out->high_frame_rate) {
           /* A period of 0 is a failed wait: never taken for 119.88 Hz */
           const uint64_t period = videoout_vblank_period_ns(out->handle);
-@@ -1378,6 +1394,7 @@ int wsi_ps5_configure_output(int hdr, int vsync, int high_refresh)
+@@ -1381,6 +1397,7 @@ int wsi_ps5_configure_output(int hdr, int vsync, int high_refresh)
     }
     out->hdr = hdr != 0;
     out->prefer_high_refresh = high_refresh != 0;
