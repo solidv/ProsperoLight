@@ -1,15 +1,15 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -66,7 +66,7 @@
- #define VIDEOOUT_HIGH_REFRESH_LIMIT_NS UINT64_C(12500000)
- #define VIDEOOUT_PERIOD_INTERVALS 6
- /* param.json's attribute3 bits for high-frame-rate output (PS5_Vulkan R31). */
--#define VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE 0x80040u
+@@ -78,7 +78,7 @@
+ /* param.json's attribute3 bit for 120 Hz output. PS5_Vulkan R31/R92 declared it with 0x80000
+  * (a 120 Hz mode that requires VRR), which turns the system's VRR off; retail titles with VRR
+  * declare 0x40 with 0x40000. VideoOut itself grants mode 15 or refuses it. */
+-#define VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE 0x40u
 +#define VIDEOOUT_ATTRIBUTE3_HIGH_FRAME_RATE PS5_VIDEOOUT_ATTRIBUTE_120HZ
  
  #if !defined(__PROSPERO__)
  /* The host model: flips show at once and a vblank comes every millisecond,
-@@ -277,7 +277,10 @@
+@@ -343,7 +343,10 @@ videoout_title_declares_high_frame_rate(void)
     if (at == NULL || (at = strchr(at, ':')) == NULL)
        return false;
     const unsigned long value = strtoul(at + 1, NULL, 0);
@@ -21,40 +21,32 @@
  }
  
  /* The refresh period: the median of a few intervals between vblank waits,
-@@ -335,14 +338,17 @@
-       fprintf(stderr, "wsi/videoout: sceVideoOutOpen failed: 0x%08x\n", (unsigned)out->handle);
-       return false;
-    }
--   if (out->prefer_high_refresh && videoout_title_declares_high_frame_rate()) {
-+   const bool declared = videoout_title_declares_high_frame_rate();
-+   fprintf(stderr, "wsi/videoout: policy high=%u vrr=%u hdr=%u declared_hfr=%u\n",
-+           out->prefer_high_refresh, out->prefer_vrr, out->hdr, declared);
-+   if (out->prefer_high_refresh && declared) {
-       const int supported =
-          sceVideoOutIsOutputSupported(out->handle, PS5_VIDEO_OUT_MODE_HIGH_FRAME_RATE, NULL, NULL, NULL);
-       const int configured =
+@@ -413,7 +416,7 @@ videoout_open_locked(void)
           supported > 0
              ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_HIGH_FRAME_RATE, NULL, NULL, NULL)
-             : supported;
--      out->high_frame_rate = configured == 0;
+             : -1;
+-      out->high_frame_rate = supported > 0 && configured == 0;
 +      out->high_frame_rate = ps5_videoout_hfr_accepted(supported, configured);
        if (out->high_frame_rate && !out->prefer_vrr) {
           const int peg = sceVideoOutVrrPegToFixedRate(out->handle, 0, 0);
           fprintf(stderr, "wsi/videoout: peg request rc=%08x\n", (unsigned)peg);
-@@ -367,9 +373,21 @@
+@@ -442,13 +445,22 @@ videoout_open_locked(void)
+                     "wsi/videoout: 119.88 Hz accepted; startup period %.3f ms; verify after scanout starts\n",
                      (double)period / 1e6);
           }
+-      } else if (supported > 0) {
+-         fprintf(stderr, "wsi/videoout: 119.88 Hz refused (%d); presenting at 59.94 Hz\n", configured);
        } else {
--         fprintf(stderr, "wsi/videoout: 119.88 Hz %s (%d); presenting at 59.94 Hz\n",
--                 supported > 0 ? "refused" : "not supported", configured);
--      }
+-         fprintf(stderr,
+-                 "wsi/videoout: 119.88 Hz not offered on the console's present output (%d); presenting at 59.94 Hz\n",
+-                 supported);
 +         const int fallback = sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_RESTORE,
 +                                                         NULL, NULL, NULL);
 +         const int peg = sceVideoOutVrrPegToFixedRate(out->handle, 0, 0);
 +         fprintf(stderr, "wsi/videoout: 119.88 Hz %s (%d); fixed fallback=%08x peg=%08x\n",
 +                 supported > 0 ? "refused" : "not supported", configured,
 +                 (unsigned)fallback, (unsigned)peg);
-+      }
+       }
 +   } else {
 +      /* Do not inherit a previous native/RADV session's HDMI mode. A low-rate
 +       * fixed stream still needs an explicit mode and refresh-policy request. */
@@ -66,10 +58,10 @@
     }
     return true;
  }
-@@ -1207,8 +1225,10 @@
-       while (videoout_shown_argument_locked() < out->flip_argument && os_time_get_nano() < deadline)
-          sceVideoOutWaitVblank(out->handle);
-       const int unregister_result = out->buffers ? sceVideoOutUnregisterBuffers(out->handle, 0) : 0;
+@@ -1338,8 +1350,10 @@ wsi_ps5_release_videoout(void)
+       int unregister_result = 0;
+       for (uint32_t i = 0; i < out->set_count; i++)
+          unregister_result |= sceVideoOutUnregisterBuffers(out->handle, (int32_t)i);
 -      const int restore_result = out->high_frame_rate
 -         ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_RESTORE, NULL, NULL, NULL) : 0;
 +      /* Also restore when HFR was skipped/refused: the title can have opened
@@ -79,8 +71,8 @@
        if (restore_result == 0) {
           sceVideoOutWaitVblank(out->handle);
           sceVideoOutWaitVblank(out->handle);
-@@ -1237,6 +1257,8 @@
-    out->physical = -1;
+@@ -1372,6 +1386,8 @@ wsi_ps5_release_videoout(void)
+    out->set_count = 0;
     out->handle = -1;
     out->opened = out->high_frame_rate = out->modes_settled = out->high_mode_offered = false;
 +   out->hdr = out->prefer_high_refresh = out->prefer_vrr = false;

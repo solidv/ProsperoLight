@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Sourced by tools/build.sh. Uses the exact hardware-proven dependency pins.
 prepare_pyrowave_build() {
+    source "$root/tools/pyrowave/pins.sh"
     bash "$root/tools/pyrowave/fetch-deps.sh"
     local deps="$root/.deps/pyrowave"
     export PS5_VULKAN_ROOT="$deps/PS5_Vulkan"
     export PS5_PAYLOAD_SDK="$PS5_VULKAN_ROOT/.deps/native/ps5-payload-sdk"
     export PS5_MESA_FORK="$deps/PS5_Mesa" PS5_PAYLOADSDK_FORK="$deps/PS5_PayloadSDK"
+    # PS5_Vulkan defaults to its own Mesa revision; build the pin this repository records.
+    export PS5_MESA_REVISION="$PS5_MESA_REV"
     bash "$PS5_VULKAN_ROOT/tools/setup-native-dependencies.sh"
     # With USE_CCACHE=1 the RADV and PyroWave compiles go through ccache.
     # Clear persisted CMake launchers when caching is disabled on a reused build tree.

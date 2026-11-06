@@ -1,6 +1,6 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -44,6 +44,7 @@
+@@ -57,6 +57,7 @@
  #include "wsi_common_entrypoints.h"
  #include "wsi_common_private.h"
  #include "ps5_videoout_formats.h"
@@ -8,17 +8,20 @@
  
  #if defined(__PROSPERO__)
  #include <immintrin.h>
-@@ -263,24 +264,13 @@
+@@ -326,27 +327,13 @@ struct wsi_videoout {
  
  /* --- VideoOut ------------------------------------------------------------ */
  
+-/* The title's param.json: /app0's, or the one PS5_VIDEOOUT_PARAM_JSON names, for a title
+- * without /app0 (an elevated process does not see it). */
 +/* Copied from the application before device/output initialization. */
 +static char videoout_metadata_path[256] = "/app0/sce_sys/param.json";
 +
  static bool
  videoout_title_declares_high_frame_rate(void)
  {
--   FILE *const file = fopen("/app0/sce_sys/param.json", "rb");
+-   const char *const path = getenv("PS5_VIDEOOUT_PARAM_JSON");
+-   FILE *const file = fopen(path != NULL && path[0] != '\0' ? path : "/app0/sce_sys/param.json", "rb");
 -   if (file == NULL)
 -      return false;
 -   char text[16384];
@@ -37,7 +40,7 @@
  }
  
  /* The refresh period: the median of a few intervals between vblank waits,
-@@ -1269,8 +1259,8 @@
+@@ -1398,8 +1385,8 @@ wsi_ps5_release_videoout(void)
  /* Application selects scanout semantics before creating a display surface.
   * Uses the same verified VideoOut format and HSYNC flip mode as VideoDec2.
   */
@@ -48,7 +51,7 @@
  {
     call_once(&videoout_once, videoout_output_init_once);
     struct wsi_videoout_output *out = &videoout_output;
-@@ -1279,6 +1269,11 @@
+@@ -1408,6 +1395,11 @@ int wsi_ps5_configure_output(int hdr, int vsync, int high_refresh)
        mtx_unlock(&out->lock);
        return -1;
     }

@@ -1,39 +1,41 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -218,6 +218,8 @@
+@@ -260,6 +260,7 @@ struct wsi_videoout_output {
+    struct wsi_videoout_set {
+       const struct wsi_videoout_size *size;
+       uint8_t *buffers;
++      int64_t physical;
+    } sets[VIDEOOUT_SIZES];
+    uint32_t set_count;
+    /* The argument of the latest flip submitted; each flip's is one more. */
+@@ -276,6 +277,7 @@ struct wsi_videoout_output {
     struct wsi_videoout_swapchain *current;
  
     /* The flip thread and its queue. */
 +   bool stopping;
-+   int64_t physical;
     bool thread_started;
     thrd_t thread;
     struct wsi_videoout_present queue[VIDEOOUT_BUFFERS * 2];
-@@ -226,6 +228,7 @@
- 
- static struct wsi_videoout_output videoout_output = {
-    .handle = -1,
-+   .physical = -1,
- };
- static once_flag videoout_once = ONCE_FLAG_INIT;
- 
-@@ -387,6 +390,7 @@
+@@ -480,8 +482,8 @@ videoout_register_locked(const struct wsi_videoout_size *size, const struct wsi_
+    const uint32_t index = out->set_count;
+    const size_t bytes = VIDEOOUT_BUFFERS * size->buffer_bytes;
+    uint8_t *buffers = NULL;
+-#if defined(__PROSPERO__)
+    int64_t physical = -1;
++#if defined(__PROSPERO__)
+    if (sceKernelAllocateDirectMemory(0, sceKernelGetDirectMemorySize(), bytes, VIDEOOUT_BUFFER_ALIGNMENT,
+                                      PS5_KERNEL_DIRECT_TYPE_CPU, &physical) != 0)
        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+@@ -523,7 +525,7 @@ videoout_register_locked(const struct wsi_videoout_size *size, const struct wsi_
     }
-    buffers = address;
-+   out->physical = physical;
-    /* The display reads memory, not the CPU's cache. */
-    memset(buffers, 0, bytes);
-    for (size_t at = 0; at < bytes; at += 64)
-@@ -398,6 +402,7 @@
-       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
- #endif
- 
-+   out->buffers = buffers;
-    int result = sceVideoOutSetFlipRate(out->handle, 0);
-    struct ps5_video_out_buffer registered[VIDEOOUT_BUFFERS];
-    for (uint32_t i = 0; i < VIDEOOUT_BUFFERS; i++)
-@@ -432,8 +437,12 @@
+    fprintf(stderr, "wsi/videoout: %ux%u framebuffers registered as set %u, buffers %u-%u\n", size->extent.width,
+            size->extent.height, index, index * VIDEOOUT_BUFFERS, index * VIDEOOUT_BUFFERS + VIDEOOUT_BUFFERS - 1);
+-   out->sets[index] = (struct wsi_videoout_set){.size = size, .buffers = buffers};
++   out->sets[index] = (struct wsi_videoout_set){.size = size, .buffers = buffers, .physical = physical};
+    out->set_count = index + 1;
+    *set_out = &out->sets[index];
+    return VK_SUCCESS;
+@@ -545,8 +547,12 @@ videoout_flip_thread(void *data)
     struct wsi_videoout_output *out = &videoout_output;
     mtx_lock(&out->lock);
     for (;;) {
@@ -47,7 +49,7 @@
        const struct wsi_videoout_present present = out->queue[out->queue_head];
        mtx_unlock(&out->lock);
  
-@@ -1129,3 +1138,73 @@
+@@ -1261,3 +1267,79 @@ void
  wsi_display_setup_syncobj_fd(struct wsi_device *wsi_device, int fd)
  {
  }
@@ -84,7 +86,9 @@
 +      const int64_t deadline = os_time_get_nano() + INT64_C(2000000000);
 +      while (videoout_shown_argument_locked() < out->flip_argument && os_time_get_nano() < deadline)
 +         sceVideoOutWaitVblank(out->handle);
-+      const int unregister_result = out->buffers ? sceVideoOutUnregisterBuffers(out->handle, 0) : 0;
++      int unregister_result = 0;
++      for (uint32_t i = 0; i < out->set_count; i++)
++         unregister_result |= sceVideoOutUnregisterBuffers(out->handle, (int32_t)i);
 +      const int restore_result = out->high_frame_rate
 +         ? sceVideoOutConfigureOutput(out->handle, PS5_VIDEO_OUT_MODE_RESTORE, NULL, NULL, NULL) : 0;
 +      if (restore_result == 0) {
@@ -103,16 +107,20 @@
 +      if (unregister_result != 0 && unregister_result != PS5_VIDEO_OUT_ERROR_BUSY)
 +         result = unregister_result;
 +   }
-+   if (out->buffers)
-+      sceKernelMunmap(out->buffers, VIDEOOUT_BUFFERS * VIDEOOUT_BUFFER_BYTES);
-+   if (out->physical >= 0)
-+      sceKernelReleaseDirectMemory(out->physical, VIDEOOUT_BUFFERS * VIDEOOUT_BUFFER_BYTES);
++   for (uint32_t i = 0; i < out->set_count; i++) {
++      const size_t bytes = VIDEOOUT_BUFFERS * out->sets[i].size->buffer_bytes;
++      if (out->sets[i].buffers)
++         sceKernelMunmap(out->sets[i].buffers, bytes);
++      if (out->sets[i].physical >= 0)
++         sceKernelReleaseDirectMemory(out->sets[i].physical, bytes);
++   }
 +#else
-+   if (out->buffers)
-+      munmap(out->buffers, VIDEOOUT_BUFFERS * VIDEOOUT_BUFFER_BYTES);
++   for (uint32_t i = 0; i < out->set_count; i++)
++      if (out->sets[i].buffers)
++         munmap(out->sets[i].buffers, VIDEOOUT_BUFFERS * out->sets[i].size->buffer_bytes);
 +#endif
-+   out->buffers = NULL;
-+   out->physical = -1;
++   memset(out->sets, 0, sizeof(out->sets));
++   out->set_count = 0;
 +   out->handle = -1;
 +   out->opened = out->high_frame_rate = out->modes_settled = out->high_mode_offered = false;
 +   out->flip_argument = 0;

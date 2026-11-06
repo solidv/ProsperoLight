@@ -1,6 +1,6 @@
 --- a/src/vulkan/wsi/wsi_common_videoout.c
 +++ b/src/vulkan/wsi/wsi_common_videoout.c
-@@ -273,9 +273,19 @@
+@@ -340,9 +340,19 @@ static uint64_t
  videoout_vblank_period_ns(int handle)
  {
     uint64_t intervals[VIDEOOUT_PERIOD_INTERVALS];
@@ -20,7 +20,7 @@
     for (unsigned at = 0; at < VIDEOOUT_PERIOD_INTERVALS; at++) {
        if (sceVideoOutWaitVblank(handle) != 0)
           return 0;
-@@ -283,6 +293,11 @@
+@@ -350,6 +360,11 @@ videoout_vblank_period_ns(int handle)
        intervals[at] = now - previous;
        previous = now;
     }
