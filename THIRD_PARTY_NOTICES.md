@@ -173,13 +173,13 @@ Linked into the default build (`PYROWAVE=1`); `make PYROWAVE=0 app` leaves it ou
 licence texts of PyroWave, Granite, Volk, the Vulkan headers and Mesa are copied into the
 app's `licenses/` folder when it is built.
 
-- PyroWave: Themaister/pyrowave, Copyright (c) 2025 Hans-Kristian Arntzen, MIT, pinned to 186f0393b77f7755953b5ecde994bb1cec2e4155.
-- Granite: Themaister/Granite, Copyright (c) 2017-2026 Hans-Kristian Arntzen, MIT, pinned to b6cffd5ce81f540f0855e6778428483e14763d9b.
+- PyroWave: Themaister/pyrowave, Copyright (c) 2025 Hans-Kristian Arntzen, MIT, pinned to 7fe0e2667cd3076b8b2bf04bcb80bc8d691b800b.
+- Granite: Themaister/Granite, Copyright (c) 2017-2026 Hans-Kristian Arntzen, MIT, pinned to 69f450c62dc3780680b936539a931b5d03e436fb.
 - Volk: zeux/volk, Copyright (c) 2018-2026 Arseny Kapoulkine, MIT; Vulkan-Headers: KhronosGroup/Vulkan-Headers, The Khronos Group Inc., Apache-2.0 OR MIT.
 - RADV/Mesa: Mihawk-99/PS5_Mesa, the Mesa 26.2.0 release with a PS5 winsys; Mesa's own licences (MIT for the parts linked here; `docs/license.rst` in that tree), Copyright (C) the Mesa authors.
 - PS5 build/link integration: Mihawk-99/PS5_Vulkan, GPL-3.0-or-later.
 - PayloadSDK platform fork: Mihawk-99/PS5_PayloadSDK, GPL-3.0-or-later; its platform layer includes Doug Lea's dlmalloc (public domain).
 - PyroWave framing parser: derived from Nonary/moonlight-qt revision 5f9ce4a46d2b8fd2191f47cef043bc43f3d772d0, GPL-3.0-or-later. Original parser retained, with provenance headers; no Windows/D3D interop copied.
-- moonlight-common-c: the original upstream submodule pin f900dd4767759c7b9d0e93bcea666b55c69ea62f is retained with a minimal protocol patch derived from Nonary revisions 927eba9639f3c9b5037ab45fc0d6486e2a19b39f and 3bbe8e818b42a8a1dc3a1381149b7e818fbd33fd, preserving its LICENSE.txt. No second transport implementation.
+- moonlight-common-c: upstream submodule pin e80a786afedeaccff63e839e68c8f3d8a057c13d is retained with a minimal protocol patch derived from Nonary revisions 927eba9639f3c9b5037ab45fc0d6486e2a19b39f and 3bbe8e818b42a8a1dc3a1381149b7e818fbd33fd, preserving its LICENSE.txt. No second transport implementation.
 
 The decoder/context/renderer are adapted from the preceding MIT-licensed PS5 PyroWave PoC. Source license headers are preserved. Dependency pins and local patches are documented in docs/PYROWAVE.md and tools/pyrowave/. Build caches and binaries are not source deliverables.

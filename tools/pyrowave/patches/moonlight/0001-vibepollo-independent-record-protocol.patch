@@ -82,7 +82,7 @@ index 22bee46..2f2c1c7 100644
 +// PyroWave bitstream identity (first 8 hex digits of the pyrowave commit the
 +// codec was vendored from). The bitstream has no version field of its own, so
 +// Sunshine hosts advertise theirs in the RTSP DESCRIBE response.
-+#define PYROWAVE_BITSTREAM_ID "186f0393"
++#define PYROWAVE_BITSTREAM_ID "7fe0e266"
 +
 +// x-ss-video[0].pyrowaveFeatures bits sent in the RTSP ANNOUNCE.
 +// Partial-frame decoding needs no bit: a record-framed client always decodes
@@ -149,10 +149,10 @@ index 22bee46..2f2c1c7 100644
  // processing frames asynchronously may need to reset their decoder state even after returning DR_OK for
  // the prior frame. Rather than wait for a new frame and return DR_NEED_IDR for that one, they can just
 diff --git a/src/PlatformSockets.c b/src/PlatformSockets.c
-index cec96f3..6a5e3ee 100644
+index 50a4e4e..a2fe389 100644
 --- a/src/PlatformSockets.c
 +++ b/src/PlatformSockets.c
-@@ -231,6 +231,68 @@ int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect) {
+@@ -232,6 +232,68 @@ int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect,
      return err;
  }
  
@@ -222,13 +222,13 @@ index cec96f3..6a5e3ee 100644
  #if defined(LC_WINDOWS) && !defined(NXDK)
      closesocket(s);
 diff --git a/src/PlatformSockets.h b/src/PlatformSockets.h
-index 4bac8bd..892e431 100644
+index 38e2061..623f133 100644
 --- a/src/PlatformSockets.h
 +++ b/src/PlatformSockets.h
-@@ -129,6 +129,9 @@ SOCKET bindUdpSocket(int addressFamily, struct sockaddr_storage* localAddr, SOCK
- int enableNoDelay(SOCKET s);
+@@ -130,6 +130,9 @@ int enableNoDelay(SOCKET s);
  int setSocketNonBlocking(SOCKET s, bool enabled);
- int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect);
+ int recvUdpSocket(SOCKET s, char* buffer, int size, bool useSelect,
+                   struct sockaddr_storage* remoteAddr, SOCKADDR_LEN* addrLen);
 +// Requires a nonblocking socket. Read queued data before waiting; zero means
 +// the socket stayed empty through the requested wait, not a zero-byte packet.
 +int recvUdpSocketWithTimeout(SOCKET s, char* buffer, int size, int timeoutMs);
@@ -236,7 +236,7 @@ index 4bac8bd..892e431 100644
  int setNonFatalRecvTimeoutMs(SOCKET s, int timeoutMs);
  void closeSocket(SOCKET s);
 diff --git a/src/RtpVideoQueue.c b/src/RtpVideoQueue.c
-index a4e022e..8172191 100644
+index a4e022e..c7660b7 100644
 --- a/src/RtpVideoQueue.c
 +++ b/src/RtpVideoQueue.c
 @@ -17,6 +17,23 @@
@@ -654,7 +654,7 @@ index c9bce6f..0d0b106 100644
 +bool RtpvExpirePendingFrame(PRTP_VIDEO_QUEUE queue, uint64_t nowUs);
  void RtpvSubmitQueuedPackets(PRTP_VIDEO_QUEUE queue);
 diff --git a/src/RtspConnection.c b/src/RtspConnection.c
-index e958101..af28252 100644
+index a754843..f548d26 100644
 --- a/src/RtspConnection.c
 +++ b/src/RtspConnection.c
 @@ -20,6 +20,9 @@ static PPLT_CRYPTO_CONTEXT encryptionCtx;
@@ -701,7 +701,7 @@ index e958101..af28252 100644
  bool parseSdpAttributeToUInt(const char* payload, const char* name, uint32_t* val) {
      // Find the entry for the specified attribute name
      char* attribute = strstr(payload, name);
-@@ -1087,7 +1117,41 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
+@@ -1087,7 +1117,43 @@ int performRtspHandshake(PSERVER_INFORMATION serverInfo) {
              goto Exit;
          }
  
@@ -732,9 +732,11 @@ index e958101..af28252 100644
 +                Limelog("Selected PyroWave profile is unsupported by host\n");
 +                ret = -1; goto Exit;
 +            }
-+            // Other IDs listed here have shaders and bitstream code identical to
-+            // PYROWAVE_BITSTREAM_ID's; add one only after diffing those.
++            // Older hosts are accepted while they use the frozen PyroWave v1
++            // bitstream. Add a revision only after diffing its bitstream and
++            // shaders against this one.
 +            if (strcmp(hostPyroWaveBitstreamId, PYROWAVE_BITSTREAM_ID) != 0 &&
++                strcmp(hostPyroWaveBitstreamId, "186f0393") != 0 &&
 +                strcmp(hostPyroWaveBitstreamId, "c0b997f8") != 0) {
 +                Limelog("Incompatible PyroWave bitstream: host '%s', expected '%s'\n", hostPyroWaveBitstreamId, PYROWAVE_BITSTREAM_ID);
 +                ret = -1; goto Exit;
@@ -916,7 +918,7 @@ index 5baa1d5..d36539b 100644
  
      if (existingEntry != NULL) {
 diff --git a/src/VideoStream.c b/src/VideoStream.c
-index 402b056..1a8268f 100644
+index 117b292..d870d78 100644
 --- a/src/VideoStream.c
 +++ b/src/VideoStream.c
 @@ -34,6 +34,10 @@ static bool receivedFullFrame;
@@ -952,14 +954,16 @@ index 402b056..1a8268f 100644
          // SO_RCVTIMEO failed, so use select() to wait
          useSelect = true;
      }
-@@ -134,16 +144,44 @@ static void VideoReceiveThreadProc(void* context) {
+@@ -134,18 +144,46 @@ static void VideoReceiveThreadProc(void* context) {
              }
          }
  
 -        err = recvUdpSocket(rtpSocket,
 -                            encrypted ? encryptedBuffer : buffer,
 -                            receiveSize,
--                            useSelect);
+-                            useSelect,
+-                            NULL,
+-                            NULL);
 +        if (usePartialFrameTimeout) {
 +            int timeoutMs = UDP_RECV_POLL_TIMEOUT_MS;
 +            uint64_t deadlineUs = RtpvGetPendingFrameDeadlineUs(&rtpQueue);
@@ -987,7 +991,9 @@ index 402b056..1a8268f 100644
 +            err = recvUdpSocket(rtpSocket,
 +                                encrypted ? encryptedBuffer : buffer,
 +                                receiveSize,
-+                                useSelect);
++                                useSelect,
++                                NULL,
++                                NULL);
 +        }
          if (err < 0) {
              Limelog("Video Receive: recvUdpSocket() failed: %d\n", (int)LastSocketError());
@@ -1001,7 +1007,7 @@ index 402b056..1a8268f 100644
              if (!receivedDataFromPeer) {
                  // If we wait many seconds without ever receiving a video packet,
                  // assume something is broken and terminate the connection.
-@@ -328,14 +366,35 @@ int startVideoStream(void* rendererContext, int drFlags) {
+@@ -331,14 +369,35 @@ int startVideoStream(void* rendererContext, int drFlags) {
          return err;
      }
  

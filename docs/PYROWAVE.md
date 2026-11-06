@@ -29,8 +29,8 @@ nine-entry VideoDec2 configuration table. No PyroWave VideoDec2 mode is fabricat
 
 ## Protocol and dependencies
 
-The single moonlight-common-c submodule stays at ProsperoLight's original upstream
-`f900dd4767759c7b9d0e93bcea666b55c69ea62f`. Build scripts apply the reviewable patch
+The single moonlight-common-c submodule tracks upstream
+`e80a786afedeaccff63e839e68c8f3d8a057c13d`. Build scripts apply the reviewable patch
 in `tools/pyrowave/patches/moonlight/`. It carries Nonary's independent-frame
 negotiation, depacketization, record-start/lost-packet markers, critical-packet
 metadata and partial-frame timeout/recovery. References: Nonary
@@ -40,10 +40,10 @@ are excluded; upstream H.264/HEVC IDR-drop behavior is retained.
 
 Each PyroWave profile requires its exact host capability bit. Only its single
 VIDEO_FORMAT is offered. An absent or unknown DESCRIBE bitstream ID is an error,
-not a fallback or warning. The decoder revision remains
-`186f0393b77f7755953b5ecde994bb1cec2e4155` (ID `186f0393`). The check also accepts
-`c0b997f8` (punktfunk's vendored revision): the commits between the two touch only
-the Metal backend, the C API and build files, not shaders or bitstream code.
+not a fallback or warning. The decoder revision is pinned to
+`7fe0e2667cd3076b8b2bf04bcb80bc8d691b800b` (ID `7fe0e266`). Hosts advertising
+the older `186f0393` revision or punktfunk's `c0b997f8` remain accepted while they
+use the frozen PyroWave v1 bitstream.
 
 ANNOUNCE uses bitStreamFormat=3, stock chroma/dynamic-range attributes,
 pyrowaveAdaptiveFec=0, pyrowaveAdaptiveBitrate=0 and pyrowaveFeatures=1.

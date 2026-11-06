@@ -66,7 +66,7 @@ def main():
                 pins[name] = revision
         archives = [Path(line) for line in (ROOT / "build/pyrowave/archives.txt").read_text().splitlines() if line]
         archives.append(ROOT / ".deps/pyrowave/PS5_Vulkan/.deps/native/radv-release/lib/libvulkan_radeon.ps5.a")
-        receipt["pyrowave"] = {"pins": pins, "bitstream": "186f0393",
+        receipt["pyrowave"] = {"pins": pins, "bitstream": "7fe0e266",
             "archives": [{"name": p.name, "sha256": digest(p)} for p in archives],
             "wsi_patches": {p.name: digest(p) for p in sorted((ROOT / "tools/pyrowave/patches/radv").glob("*.patch"))},
             "title_metadata_header_sha256": digest(ROOT / "include/ps5_title_metadata.h"),
