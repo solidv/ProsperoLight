@@ -186,6 +186,21 @@ class ToolTests(unittest.TestCase):
         self.assertIn('"PyroWave"', first_line)
         self.assertIn('hdr ? " / HDR" : ""', first_line)
 
+    def test_overlay_reports_bandwidth_packet_and_presentation_metrics(self):
+        source = (ROOT / "include/stream_overlay.hpp").read_text(encoding="utf-8")
+        overlay = " ".join(source.split())
+        self.assertIn('"Stream bitrate: %u.%u Mbps avg / %u.%u Mbps peak (10 s)"', overlay)
+        self.assertIn(
+            '"Packets: %u.%02u K/s / FEC recovered %llu / failed %llu / invalid %llu"',
+            overlay,
+        )
+        self.assertIn(
+            '"%s: %llu.%02llu ms avg / %llu.%02llu ms max / wait %llu.%02llu ms"',
+            overlay,
+        )
+        self.assertIn("hud_line(luma, 12, text_luma, line);", overlay)
+        self.assertIn("!metrics->host_latency_samples", overlay)
+
     def test_selectable_frame_rate_reaches_sunshine_and_decoder(self):
         config = (ROOT / "include/moonlight_config.hpp").read_text(encoding="utf-8")
         launcher = (ROOT / "src/main.cpp").read_text(encoding="utf-8")

@@ -12,13 +12,17 @@
 #include <cstdio>
 #include <cstring>
 #define HUD_WIDTH 832u
-#define HUD_HEIGHT 220u
 #define HUD_X 16u
 #define HUD_Y 16u
 #define HUD_TEXT_X 16u
 #define HUD_GLYPH_WIDTH 10u
 #define HUD_GLYPH_HEIGHT 10u
 #define HUD_LINE_HEIGHT 13u
+#define HUD_LINE_COUNT 13u
+// The graph keeps its original 66 px label-to-baseline span after the text rows.
+#define HUD_GRAPH_TITLE_Y (4u + HUD_LINE_HEIGHT * HUD_LINE_COUNT + 4u)
+#define HUD_GRAPH_BASE_Y (HUD_GRAPH_TITLE_Y + 66u)
+#define HUD_HEIGHT (HUD_GRAPH_BASE_Y + 13u)
 #define HUD_Y_BYTES (HUD_WIDTH * HUD_HEIGHT)
 #define HUD_UV_BYTES (HUD_WIDTH * (HUD_HEIGHT / 2u))
 #define HUD_SURFACE_BYTES (HUD_Y_BYTES + HUD_UV_BYTES)
@@ -110,8 +114,8 @@ inline void hud_line(uint8_t *luma, unsigned index, uint8_t value, const char *t
 inline void draw_graph(uint8_t *luma, uint8_t ink)
 {
     overlay_draw_text(luma, HUD_WIDTH, HUD_HEIGHT, "Unique-frame submit interval (CPU), 0-50 ms",
-                      16, 142, ink);
-    const unsigned base = 208;
+                      16, HUD_GRAPH_TITLE_Y, ink);
+    const unsigned base = HUD_GRAPH_BASE_Y;
     for (unsigned i = 0; i < graph.count; ++i)
     {
         const unsigned us = graph.samples[(graph.next + graph.samples.size() - graph.count + i) %
@@ -161,11 +165,9 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
                  metrics->decoder_cores, (unsigned long long)metrics->decoder_cpu_mask);
     hud_line(luma, 2, text_luma, line);
     if (metrics->video_codec == 2)
-        snprintf(
-            line, sizeof(line), "GPU decode avg: %llu.%02llu ms / GPU render avg: %llu.%02llu ms",
-            (unsigned long long)(decode_us / 1000), (unsigned long long)((decode_us % 1000) / 10),
-            (unsigned long long)(metrics->gpu_render_average_us / 1000),
-            (unsigned long long)((metrics->gpu_render_average_us % 1000) / 10));
+        snprintf(line, sizeof(line), "GPU decode avg: %llu.%02llu ms",
+                 (unsigned long long)(decode_us / 1000),
+                 (unsigned long long)((decode_us % 1000) / 10));
     else
         snprintf(line, sizeof(line),
                  "Decode (last second): %llu.%02llu ms avg / %llu.%02llu ms p95 / "
@@ -200,13 +202,14 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
     else
         snprintf(line, sizeof(line), "Average network latency: N/A");
     hud_line(luma, 7, text_luma, line);
-    snprintf(line, sizeof(line),
-             metrics->video_codec == 2
-                 ? "Host processing latency: N/A"
-                 : "Host processing latency min/max/average: %u.%u/%u.%u/%u.%u ms",
-             metrics->host_min_tenths_ms / 10u, metrics->host_min_tenths_ms % 10u,
-             metrics->host_max_tenths_ms / 10u, metrics->host_max_tenths_ms % 10u,
-             metrics->host_average_tenths_ms / 10u, metrics->host_average_tenths_ms % 10u);
+    if (!metrics->host_latency_samples)
+        snprintf(line, sizeof(line), "Host processing latency: N/A");
+    else
+        snprintf(line, sizeof(line),
+                 "Host processing latency min/max/average: %u.%u/%u.%u/%u.%u ms",
+                 metrics->host_min_tenths_ms / 10u, metrics->host_min_tenths_ms % 10u,
+                 metrics->host_max_tenths_ms / 10u, metrics->host_max_tenths_ms % 10u,
+                 metrics->host_average_tenths_ms / 10u, metrics->host_average_tenths_ms % 10u);
     hud_line(luma, 8, text_luma, line);
     snprintf(line, sizeof(line),
              metrics->video_codec == 2
@@ -217,6 +220,28 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
              (unsigned long long)(metrics->queue_delay_max_us / 1000u),
              (unsigned long long)((metrics->queue_delay_max_us % 1000u) / 10u));
     hud_line(luma, 9, text_luma, line);
+    snprintf(line, sizeof(line), "Stream bitrate: %u.%u Mbps avg / %u.%u Mbps peak (10 s)",
+             metrics->bitrate_kbps / 1000u, (metrics->bitrate_kbps % 1000u) / 100u,
+             metrics->peak_bitrate_kbps / 1000u, (metrics->peak_bitrate_kbps % 1000u) / 100u);
+    hud_line(luma, 10, text_luma, line);
+    snprintf(line, sizeof(line),
+             "Packets: %u.%02u K/s / FEC recovered %llu / failed %llu / invalid %llu",
+             metrics->packets_per_second_x100 / 100000u,
+             (metrics->packets_per_second_x100 % 100000u) / 1000u,
+             (unsigned long long)metrics->fec_recovered_packets,
+             (unsigned long long)metrics->fec_failed_packets,
+             (unsigned long long)metrics->invalid_packets);
+    hud_line(luma, 11, text_luma, line);
+    snprintf(line, sizeof(line),
+             "%s: %llu.%02llu ms avg / %llu.%02llu ms max / wait %llu.%02llu ms",
+             metrics->video_codec == 2 ? "GPU render" : "Present",
+             (unsigned long long)(metrics->render_average_us / 1000u),
+             (unsigned long long)((metrics->render_average_us % 1000u) / 10u),
+             (unsigned long long)(metrics->render_max_us / 1000u),
+             (unsigned long long)((metrics->render_max_us % 1000u) / 10u),
+             (unsigned long long)(metrics->present_wait_average_us / 1000u),
+             (unsigned long long)((metrics->present_wait_average_us % 1000u) / 10u));
+    hud_line(luma, 12, text_luma, line);
     draw_graph(luma, text_luma);
 }
 

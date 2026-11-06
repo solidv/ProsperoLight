@@ -24,6 +24,11 @@ extern "C"
         return false;
     }
 #endif
+    const RTP_VIDEO_STATS *LiGetRTPVideoStats(void)
+    {
+        static RTP_VIDEO_STATS stats{};
+        return &stats;
+    }
     int prosperolight_logs_enabled(void)
     {
         return diagnostic_logs;

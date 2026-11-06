@@ -39,6 +39,7 @@ typedef struct native_agc_metrics
     uint32_t host_min_tenths_ms;
     uint32_t host_max_tenths_ms;
     uint32_t host_average_tenths_ms;
+    uint32_t host_latency_samples; ///< Frames carrying host processing latency.
     uint32_t decoder_load_permille;
     uint64_t decode_average_us; // last full one-second window
     uint64_t decode_p95_us;
@@ -58,6 +59,16 @@ typedef struct native_agc_metrics
     uint64_t gpu_render_average_us;
     uint64_t lost_packets;
     uint32_t partial_frames, rejected_frames;
+    uint32_t bitrate_kbps;            ///< Average video payload rate over ten seconds.
+    uint32_t peak_bitrate_kbps;       ///< Highest one-second payload rate in that window.
+    uint32_t packets_per_second_x100; ///< RTP data and FEC packets per second, times 100.
+    uint64_t fec_recovered_packets;   ///< RTP packets reconstructed by FEC this session.
+    uint64_t fec_failed_packets;      ///< RTP packets FEC could not recover this session.
+    uint64_t invalid_packets;         ///< Malformed video and FEC packets this session.
+    uint64_t render_average_us;       ///< Average present/render call duration.
+    uint64_t render_max_us;           ///< Longest present/render call observed.
+    uint64_t present_wait_average_us; ///< Average ready-to-submit wait.
+    uint64_t present_wait_max_us;     ///< Longest ready-to-submit wait observed.
 } native_agc_metrics_t;
 
 int native_agc_present_nv12(const void *source, size_t source_bytes, uint32_t pitch,

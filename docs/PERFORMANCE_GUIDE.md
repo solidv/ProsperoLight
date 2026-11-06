@@ -74,7 +74,7 @@ Implementation and measurement details: [Configuration](CONFIGURATION.md#source-
 ## Practical tuning sequence
 
 1. First get a stable **1080p60 or 1440p60 HEVC** stream with a moderate bitrate and a wired LAN.
-2. Use the performance overlay (**Touchpad + R1**) to watch received/displayed FPS, decode time/load, decoder backlog and network loss separately.
+2. Use the performance overlay (**Touchpad + R1**) to watch received/displayed FPS, stream bitrate, decode time/load, packet recovery/loss, decoder backlog and presentation wait separately.
 3. Increase resolution or FPS **one at a time**, and reduce bitrate if the decoder stops keeping up. Avoid H.264 4K120 as a baseline pacing test because decoder load can obscure presentation behavior.
 4. If you have a suitable TV, test **Paced+VRR** and compare low-motion, static and return-to-motion scenes. Use Balanced first; select Low Latency when responsiveness matters most, or Smooth if repeatable client-side readiness jitter is visible.
 5. When something stutters, record whether it was caused by network packet loss, decode pressure, dropped/late pictures, or TV refresh variation. Do not treat the VideoOut software counter as a physical HDMI timestamp.

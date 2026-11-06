@@ -707,6 +707,9 @@ typedef struct native_renderer_state
     moonlight::DropAttribution drops;
     moonlight::ArrivalRate arrival;
     moonlight::RateWindow decoded_rate;
+    moonlight::BandwidthWindow bandwidth;
+    moonlight::RateWindow packet_rate;
+    uint64_t rtp_packet_count{}, rtp_fec_recovered{}, rtp_fec_failed{}, rtp_invalid{};
     moonlight::WindowedTiming decode_window, queue_window;
     moonlight::CatchUpGuard catchup;
     moonlight::TimingHistogram copy_timing, decode_timing, queue_timing, reassembly_timing;
@@ -726,6 +729,9 @@ typedef struct native_renderer_state
     uint32_t latency_calls;
     uint64_t present_total_us;
     uint64_t present_max_us;
+    uint64_t present_wait_total_us;
+    uint64_t present_wait_max_us;
+    uint32_t present_wait_calls;
     uint64_t callback_to_flip_total_us;
     uint64_t callback_to_flip_min_us;
     uint64_t callback_to_flip_max_us;
@@ -1842,6 +1848,7 @@ static void snapshot_hud_metrics(const native_renderer_state_t *state, int pendi
     hud->rtt_valid = state->rtt_valid ? 1u : 0u;
     hud->host_min_tenths_ms = state->host_latency_min_tenths_ms;
     hud->host_max_tenths_ms = state->host_latency_max_tenths_ms;
+    hud->host_latency_samples = state->host_latency_frames;
     hud->host_average_tenths_ms =
         state->host_latency_frames
             ? (uint32_t)(state->host_latency_total_tenths_ms / state->host_latency_frames)
@@ -1852,6 +1859,12 @@ static void snapshot_hud_metrics(const native_renderer_state_t *state, int pendi
     hud->queue_delay_average_us = state->queue_window.last_mean_us;
     hud->queue_delay_max_us = state->queue_window.last_max_us;
     hud->pending_frames = pending > 0 ? (uint32_t)pending : 0;
+    hud->bitrate_kbps = state->bandwidth.average_kbps;
+    hud->peak_bitrate_kbps = state->bandwidth.peak_kbps;
+    hud->packets_per_second_x100 = state->packet_rate.fps_x100;
+    hud->fec_recovered_packets = state->rtp_fec_recovered;
+    hud->fec_failed_packets = state->rtp_fec_failed;
+    hud->invalid_packets = state->rtp_invalid;
     hud->slices_requested = state->slices_requested;
     hud->slices_observed = state->observed_slices_last;
     hud->pipeline_depth = state->pipeline_depth;
@@ -1978,6 +1991,7 @@ static int32_t settle_decoder_call(native_renderer_state_t *state, int offered,
         ready.ready_us = completed_us;
         ready.pts_us = submission.pts_us;
         ready.trace = submission.trace;
+        state->bandwidth.update(completed_us, state->stream_bytes);
         snapshot_hud_metrics(state, pending, &ready.hud);
         publish_ready_frame(state, ready);
     }
@@ -2685,6 +2699,14 @@ static int decode_access_unit(native_renderer_state_t *state, PDECODE_UNIT decod
         decode_unit->frameNumber,
         std::atomic_load_explicit(&video_recovery_epoch, std::memory_order_relaxed));
     const bool rate_updated = state->arrival.update(network_enqueue_us, decode_unit->frameNumber);
+    if (const RTP_VIDEO_STATS *rtp = LiGetRTPVideoStats())
+    {
+        state->rtp_packet_count = (uint64_t)rtp->packetCountVideo + rtp->packetCountFec;
+        state->rtp_fec_recovered = rtp->packetCountFecRecovered;
+        state->rtp_fec_failed = rtp->packetCountFecFailed;
+        state->rtp_invalid = (uint64_t)rtp->packetCountInvalid + rtp->packetCountFecInvalid;
+    }
+    state->packet_rate.update(network_enqueue_us, state->rtp_packet_count);
     if (!state->access_units || rate_updated)
         state->rtt_valid = LiGetEstimatedRttInfo(&state->rtt_ms, &state->rtt_variance_ms);
     if (decode_unit->frameHostProcessingLatency)
@@ -3173,6 +3195,17 @@ static int submit_presentation(native_renderer_state_t *state, const stream_read
     hud.pacing_mode = stream_presentation_mode;
     hud.vrr_api_active = native_agc_vrr_active();
     hud.pacing_reserve_us = stream_pacer.stats.reserve_us;
+    state->present_wait_total_us += waited;
+    ++state->present_wait_calls;
+    if (waited > state->present_wait_max_us)
+        state->present_wait_max_us = waited;
+    const uint32_t presented =
+        std::atomic_load_explicit(&state->presented, std::memory_order_relaxed);
+    hud.render_average_us = presented ? state->present_total_us / presented : 0;
+    hud.render_max_us = state->present_max_us;
+    hud.present_wait_average_us =
+        state->present_wait_calls ? state->present_wait_total_us / state->present_wait_calls : 0;
+    hud.present_wait_max_us = state->present_wait_max_us;
     if (prosperolight_debug_enabled() == 1)
     {
         // The numbers of the statistics overlay, once a second, on this (presentation) thread.

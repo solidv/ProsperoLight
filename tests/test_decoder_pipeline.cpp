@@ -117,6 +117,11 @@ extern "C"
     {
         return false;
     }
+    const RTP_VIDEO_STATS *LiGetRTPVideoStats(void)
+    {
+        static RTP_VIDEO_STATS stats{};
+        return &stats;
+    }
     bool LiWaitForNextVideoFrame(VIDEO_FRAME_HANDLE *handle, PDECODE_UNIT *unit)
     {
         for (;;)
@@ -650,6 +655,7 @@ static void presentation_hands_slots_back()
     DECODE_UNIT unit{};
     unit.fullLength = sizeof(access_unit);
     unit.bufferList = &fragment;
+    unit.frameHostProcessingLatency = 37;
     auto *state = make_state(1, Model::SameCall, 1);
     frame_trace.count = frame_trace.omitted = 0;
     assert(decode(state, &unit, 1, FRAME_TYPE_IDR) == DR_OK);
@@ -664,6 +670,8 @@ static void presentation_hands_slots_back()
     assert(state->frames.state[static_cast<size_t>(item.slot)] == Pool::Free);
     assert(frame_trace.samples[0].outcome == 1 && frame_trace.samples[0].completion_us);
     assert(item.hud.pipeline_depth == 1 && item.hud.video_codec == state->mode->codec_preference);
+    assert(item.hud.host_latency_samples == 1 && item.hud.host_min_tenths_ms == 37 &&
+           item.hud.host_max_tenths_ms == 37 && item.hud.host_average_tenths_ms == 37);
     renderer_sync_destroy(state);
     delete state;
 }

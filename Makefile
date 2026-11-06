@@ -207,6 +207,7 @@ $(HOST_UNIT_TEST): tests/test_prosperolight.cpp include/moonlight_config.hpp \
 		include/moonlight_discovery.hpp src/moonlight_discovery.cpp \
 		include/lan_http_report.hpp src/lan_http_report.cpp \
 		include/connecting_plate.hpp src/connecting_plate.cpp \
+		include/stream_overlay.hpp src/native_agc_present.hpp \
 		tools/setup-test-dependencies.sh | test-deps transport-deps
 	@printf '%s\n' '==> [test-unit] Compiling the host-native GoogleTest binary'
 	@mkdir -p -- $(@D)
@@ -217,7 +218,7 @@ $(HOST_UNIT_TEST): tests/test_prosperolight.cpp include/moonlight_config.hpp \
 		$(HOST_CCACHE) $(HOST_CXX) -std=c++20 -O2 -pthread \
 			-isystem "$$gtest/googletest/include" -I"$$gtest/googletest" \
 			-c "$$gtest/googletest/src/gtest_main.cc" -o $(@D)/gtest-main.o; \
-		$(HOST_CXX) $(HOST_TEST_CXXFLAGS) -pthread -Iinclude \
+		$(HOST_CXX) $(HOST_TEST_CXXFLAGS) -pthread -Iinclude -Isrc \
 			-isystem "$$gtest/googletest/include" \
 			tests/test_prosperolight.cpp src/moonlight_config.cpp src/moonlight_discovery.cpp \
 			src/moonlight_wol.cpp src/lan_http_report.cpp src/connecting_plate.cpp \

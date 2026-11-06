@@ -61,6 +61,9 @@ struct Session
     std::unique_ptr<PyroWaveVideoBackend> backend;
     std::atomic<uint64_t> incoming{0}, decoded{0}, shown{0}, stale{0}, partial{0}, rejected{0},
         losses{0}, bytes{0};
+    std::atomic<uint64_t> rtp_packets{0}, fec_recovered{0}, fec_failed{0}, invalid_packets{0};
+    uint32_t host_latency_frames{}, host_latency_min_tenths_ms{}, host_latency_max_tenths_ms{};
+    uint64_t host_latency_total_tenths_ms{};
     size_t high_water{};
 };
 std::unique_ptr<Session> session;
@@ -371,8 +374,11 @@ void *worker(void *)
              mode, s.fps, selected_refresh_x100, ps5_vrr_output_active() ? 1u : 0u,
              unsigned(PROSPEROLIGHT_FLIP_POLL_US));
     uint64_t last = now_us(), incoming = 0, decoded = 0, shown = 0, bytes = 0;
-    double decode_ms = 0, render_ms = 0;
+    double decode_ms = 0, render_ms = 0, render_max_ms = 0, present_wait_ms = 0,
+           present_wait_max_ms = 0;
     uint64_t samples = 0, unique_presented = 0, prior_unique_presented = 0;
+    moonlight::BandwidthWindow bandwidth;
+    moonlight::RateWindow packet_rate;
     native_agc_metrics_t initial_hud{};
     initial_hud.video_codec = 2;
     initial_hud.output_refresh_x100 = selected_refresh_x100;
@@ -721,6 +727,13 @@ void *worker(void *)
             }
             decode_ms += timing.decode_ms;
             render_ms += timing.render_ms;
+            render_max_ms = std::max(render_max_ms, timing.render_ms);
+            if (wait.submit_us && wait.ready_us && wait.submit_us >= wait.ready_us)
+            {
+                const double wait_ms = (wait.submit_us - wait.ready_us) / 1000.0;
+                present_wait_ms += wait_ms;
+                present_wait_max_ms = std::max(present_wait_max_ms, wait_ms);
+            }
             ++samples;
             counters = ps5_presentation_stats();
             if (counters.available)
@@ -747,10 +760,16 @@ void *worker(void *)
             if (elapsed >= 1000000)
             {
                 size_t depth, high;
+                uint32_t host_frames, host_min, host_max;
+                uint64_t host_total;
                 {
                     std::lock_guard<std::mutex> lock(s.mutex);
                     depth = s.queue.size();
                     high = s.high_water;
+                    host_frames = s.host_latency_frames;
+                    host_min = s.host_latency_min_tenths_ms;
+                    host_max = s.host_latency_max_tenths_ms;
+                    host_total = s.host_latency_total_tenths_ms;
                 }
                 const double seconds = elapsed / 1e6;
                 const double observed_refresh_hz =
@@ -808,9 +827,26 @@ void *worker(void *)
                     uint32_t((unique_presented - prior_unique_presented) * 100 / seconds);
                 hud.stream_width = s.width;
                 hud.stream_height = s.height;
+                hud.host_latency_samples = host_frames;
+                hud.host_min_tenths_ms = host_min;
+                hud.host_max_tenths_ms = host_max;
+                hud.host_average_tenths_ms = host_frames ? uint32_t(host_total / host_frames) : 0;
                 hud.gpu_render_average_us = uint64_t(samples ? render_ms * 1000 / samples : 0);
                 hud.decode_average_us = uint64_t(samples ? decode_ms * 1000 / samples : 0);
                 hud.decoder_load_permille = unsigned(hud.decode_average_us * s.fps / 1000);
+                bandwidth.update(now, s.bytes.load(std::memory_order_relaxed));
+                hud.bitrate_kbps = bandwidth.average_kbps;
+                hud.peak_bitrate_kbps = bandwidth.peak_kbps;
+                packet_rate.update(now, s.rtp_packets.load(std::memory_order_relaxed));
+                hud.packets_per_second_x100 = packet_rate.fps_x100;
+                hud.fec_recovered_packets = s.fec_recovered.load(std::memory_order_relaxed);
+                hud.fec_failed_packets = s.fec_failed.load(std::memory_order_relaxed);
+                hud.invalid_packets = s.invalid_packets.load(std::memory_order_relaxed);
+                hud.render_average_us = hud.gpu_render_average_us;
+                hud.render_max_us = uint64_t(render_max_ms * 1000);
+                hud.present_wait_average_us =
+                    uint64_t(samples ? present_wait_ms * 1000 / samples : 0);
+                hud.present_wait_max_us = uint64_t(present_wait_max_ms * 1000);
                 hud.pending_frames = unsigned(depth);
                 hud.not_displayed = unsigned(s.stale.load());
                 hud.lost_packets = s.losses.load();
@@ -832,7 +868,8 @@ void *worker(void *)
                 shown = s.shown;
                 bytes = s.bytes;
                 vblanks = counters.vblanks;
-                decode_ms = render_ms = 0;
+                decode_ms = render_ms = render_max_ms = 0;
+                present_wait_ms = present_wait_max_ms = 0;
                 samples = 0;
             }
         }
@@ -940,6 +977,16 @@ int submit(PDECODE_UNIT unit)
     frame.enqueue_us = unit->enqueueTimeUs;
     frame.critical = unit->pyrowaveCriticalPackets;
     frame.number = unit->frameNumber;
+    if (const RTP_VIDEO_STATS *rtp = LiGetRTPVideoStats())
+    {
+        session->rtp_packets.store((uint64_t)rtp->packetCountVideo + rtp->packetCountFec,
+                                   std::memory_order_relaxed);
+        session->fec_recovered.store(rtp->packetCountFecRecovered, std::memory_order_relaxed);
+        session->fec_failed.store(rtp->packetCountFecFailed, std::memory_order_relaxed);
+        session->invalid_packets.store((uint64_t)rtp->packetCountInvalid +
+                                           rtp->packetCountFecInvalid,
+                                       std::memory_order_relaxed);
+    }
     size_t offset = 0;
     for (auto *buffer = unit->bufferList; buffer; buffer = buffer->next)
     {
@@ -970,6 +1017,16 @@ int submit(PDECODE_UNIT unit)
                                       "drop-capacity");
             session->queue.pop_front();
             ++session->stale;
+        }
+        if (unit->frameHostProcessingLatency)
+        {
+            const uint32_t latency = unit->frameHostProcessingLatency;
+            if (!session->host_latency_frames || latency < session->host_latency_min_tenths_ms)
+                session->host_latency_min_tenths_ms = latency;
+            if (latency > session->host_latency_max_tenths_ms)
+                session->host_latency_max_tenths_ms = latency;
+            session->host_latency_total_tenths_ms += latency;
+            ++session->host_latency_frames;
         }
         session->decisions.record(frame.number, frame.rtp_timestamp, frame.queued_us, 0, "arrival");
         ++session->incoming;

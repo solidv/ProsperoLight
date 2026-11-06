@@ -17,6 +17,7 @@
 #include "moonlight_performance.hpp"
 #include "moonlight_pipeline.hpp"
 #include "moonlight_tuning.hpp"
+#include "stream_overlay.hpp"
 
 #include <gtest/gtest.h>
 
@@ -43,6 +44,67 @@ TEST(Performance, InputPollSubtractsWorkAndYieldsAfterAnOverrun)
     EXPECT_EQ(moonlight::input_poll_delay(100, 600, 2000), 1500u);
     EXPECT_EQ(moonlight::input_poll_delay(100, 5000, 2000), 100u);
     EXPECT_EQ(moonlight::input_poll_delay(100, 50, 2000), 2000u);
+}
+
+TEST(Performance, HudRendersStreamBitratePacketAndPresentationMetrics)
+{
+    native_agc_metrics_t metrics{};
+    metrics.video_codec = 1;
+    std::vector<uint8_t> baseline(HUD_SURFACE_BYTES), detailed(HUD_SURFACE_BYTES);
+    stream_overlay::refresh_hud_surface(baseline.data(), &metrics, 1920, 1080, 1920, 1080, 6000, 0);
+
+    metrics.bitrate_kbps = 82400;
+    metrics.peak_bitrate_kbps = 91300;
+    metrics.packets_per_second_x100 = 1234500;
+    metrics.fec_recovered_packets = 42;
+    metrics.fec_failed_packets = 3;
+    metrics.invalid_packets = 1;
+    metrics.render_average_us = 2310;
+    metrics.render_max_us = 8700;
+    metrics.present_wait_average_us = 430;
+    stream_overlay::refresh_hud_surface(detailed.data(), &metrics, 1920, 1080, 1920, 1080, 6000, 0);
+
+    EXPECT_NE(0, std::memcmp(baseline.data(), detailed.data(), HUD_Y_BYTES));
+}
+
+TEST(Performance, BandwidthWindowAveragesAndPeaksOverTenSeconds)
+{
+    moonlight::BandwidthWindow window;
+    EXPECT_FALSE(window.update(1000000, 0));
+    EXPECT_EQ(window.average_kbps, 0u);
+
+    // 1.25 MB over one second is 10 Mbps.
+    EXPECT_TRUE(window.update(2000000, 1250000));
+    EXPECT_EQ(window.current_kbps, 10000u);
+    EXPECT_EQ(window.average_kbps, 10000u);
+    EXPECT_EQ(window.peak_kbps, 10000u);
+
+    EXPECT_TRUE(window.update(3000000, 2500000));
+    EXPECT_EQ(window.average_kbps, 10000u);
+
+    // A short interval does not replace the one-second sample.
+    EXPECT_FALSE(window.update(3500000, 2500000));
+    EXPECT_EQ(window.average_kbps, 10000u);
+
+    // An idle second lowers the average but not the peak.
+    EXPECT_TRUE(window.update(4000000, 2500000));
+    EXPECT_EQ(window.current_kbps, 0u);
+    EXPECT_EQ(window.average_kbps, 6666u);
+    EXPECT_EQ(window.peak_kbps, 10000u);
+
+    // Ten quiet samples retire the earlier peak.
+    for (unsigned i = 0; i < 10; ++i)
+    {
+        ASSERT_TRUE(window.update(5000000 + i * 1000000u, 2500000));
+    }
+    EXPECT_EQ(window.current_kbps, 0u);
+    EXPECT_EQ(window.average_kbps, 0u);
+    EXPECT_EQ(window.peak_kbps, 0u);
+
+    // A counter reset starts a fresh window instead of producing a spike.
+    EXPECT_FALSE(window.update(16000000, 0));
+    EXPECT_EQ(window.average_kbps, 0u);
+    EXPECT_EQ(window.peak_kbps, 0u);
 }
 
 TEST(Pipeline, DecoderMaskTakesWholeCoresAndLeavesRoomForTheStream)

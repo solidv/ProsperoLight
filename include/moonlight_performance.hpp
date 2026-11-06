@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -153,6 +154,58 @@ struct RateWindow
         fps_x100 = static_cast<uint32_t>((count - previous_count) * 100000000u / elapsed);
         start_us = now_us;
         previous_count = count;
+        return true;
+    }
+};
+
+/**
+ * @brief One-second payload rates over a rolling ten-second window.
+ *
+ * Matches the average/peak bitrate figures Moonlight clients show. Callers
+ * supply cumulative byte counts, so the window is independent of frame or
+ * packet boundaries.
+ */
+struct BandwidthWindow
+{
+    static constexpr std::size_t kSeconds = 10;
+    std::array<uint32_t, kSeconds> history{};
+    std::size_t count{}, next{};
+    uint64_t start_us{}, previous_bytes{};
+    uint32_t current_kbps{}, average_kbps{}, peak_kbps{};
+    bool initialized{};
+
+    bool update(uint64_t now_us, uint64_t total_bytes)
+    {
+        if (!initialized || now_us < start_us || total_bytes < previous_bytes)
+        {
+            history = {};
+            count = next = 0;
+            current_kbps = average_kbps = peak_kbps = 0;
+            start_us = now_us;
+            previous_bytes = total_bytes;
+            initialized = true;
+            return false;
+        }
+        const uint64_t elapsed_us = now_us - start_us;
+        if (elapsed_us < 1000000u)
+            return false;
+        const uint64_t bytes = total_bytes - previous_bytes;
+        const uint64_t kbps = bytes * 8000u / elapsed_us;
+        current_kbps = static_cast<uint32_t>(std::min<uint64_t>(kbps, 0xffffffffu));
+        history[next] = current_kbps;
+        next = (next + 1u) % history.size();
+        if (count < history.size())
+            ++count;
+        uint64_t total = 0, peak = 0;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            total += history[i];
+            peak = std::max<uint64_t>(peak, history[i]);
+        }
+        average_kbps = static_cast<uint32_t>(total / count);
+        peak_kbps = static_cast<uint32_t>(peak);
+        start_us = now_us;
+        previous_bytes = total_bytes;
         return true;
     }
 };
