@@ -198,7 +198,12 @@ class ToolTests(unittest.TestCase):
             '"%s: %llu.%02llu ms avg / %llu.%02llu ms max / wait %llu.%02llu ms"',
             overlay,
         )
-        self.assertIn("hud_line(luma, 12, text_luma, line);", overlay)
+        self.assertIn(
+            '"Reassembly: %llu.%02llu ms avg / %llu.%02llu ms max"',
+            overlay,
+        )
+        self.assertIn('"Reassembly: N/A"', overlay)
+        self.assertIn("hud_line(luma, 13, text_luma, line);", overlay)
         self.assertIn("!metrics->host_latency_samples", overlay)
 
     def test_selectable_frame_rate_reaches_sunshine_and_decoder(self):

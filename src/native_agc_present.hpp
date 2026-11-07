@@ -69,6 +69,9 @@ typedef struct native_agc_metrics
     uint64_t render_max_us;           ///< Longest present/render call observed.
     uint64_t present_wait_average_us; ///< Average ready-to-submit wait.
     uint64_t present_wait_max_us;     ///< Longest ready-to-submit wait observed.
+    uint64_t reassembly_average_us;   ///< Average first-packet-to-enqueue time in the last window.
+    uint64_t reassembly_max_us;       ///< Longest such time in that window.
+    uint32_t reassembly_samples;      ///< Frames that contributed a valid sample.
 } native_agc_metrics_t;
 
 int native_agc_present_nv12(const void *source, size_t source_bytes, uint32_t pitch,

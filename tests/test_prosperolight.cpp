@@ -59,12 +59,31 @@ TEST(Performance, HudRendersStreamBitratePacketAndPresentationMetrics)
     metrics.fec_recovered_packets = 42;
     metrics.fec_failed_packets = 3;
     metrics.invalid_packets = 1;
+    metrics.reassembly_samples = 7;
+    metrics.reassembly_average_us = 4100;
+    metrics.reassembly_max_us = 9800;
     metrics.render_average_us = 2310;
     metrics.render_max_us = 8700;
     metrics.present_wait_average_us = 430;
     stream_overlay::refresh_hud_surface(detailed.data(), &metrics, 1920, 1080, 1920, 1080, 6000, 0);
 
     EXPECT_NE(0, std::memcmp(baseline.data(), detailed.data(), HUD_Y_BYTES));
+}
+
+TEST(Performance, HudRendersReassemblyTimingWhenSamplesExist)
+{
+    native_agc_metrics_t metrics{};
+    std::vector<uint8_t> unavailable(HUD_SURFACE_BYTES), measured(HUD_SURFACE_BYTES);
+    stream_overlay::refresh_hud_surface(unavailable.data(), &metrics, 1920, 1080, 1920, 1080, 6000,
+                                        0);
+
+    metrics.reassembly_samples = 3;
+    metrics.reassembly_average_us = 4250;
+    metrics.reassembly_max_us = 9100;
+    stream_overlay::refresh_hud_surface(measured.data(), &metrics, 1920, 1080, 1920, 1080, 6000, 0);
+
+    // Zero samples render N/A; valid samples replace that row with the timing.
+    EXPECT_NE(0, std::memcmp(unavailable.data(), measured.data(), HUD_Y_BYTES));
 }
 
 TEST(Performance, BandwidthWindowAveragesAndPeaksOverTenSeconds)

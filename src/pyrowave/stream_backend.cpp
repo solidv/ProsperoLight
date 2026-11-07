@@ -377,6 +377,7 @@ void *worker(void *)
     double decode_ms = 0, render_ms = 0, render_max_ms = 0, present_wait_ms = 0,
            present_wait_max_ms = 0;
     uint64_t samples = 0, unique_presented = 0, prior_unique_presented = 0;
+    uint64_t reassembly_us = 0, reassembly_max_us = 0, reassembly_count = 0;
     moonlight::BandwidthWindow bandwidth;
     moonlight::RateWindow packet_rate;
     native_agc_metrics_t initial_hud{};
@@ -624,6 +625,13 @@ void *worker(void *)
             }
             const uint64_t frame_queue_age_us =
                 dequeued > frame.queued_us ? dequeued - frame.queued_us : 0;
+            if (frame.receive_us && frame.enqueue_us >= frame.receive_us)
+            {
+                const uint64_t reassembly = frame.enqueue_us - frame.receive_us;
+                reassembly_us += reassembly;
+                reassembly_max_us = std::max(reassembly_max_us, reassembly);
+                ++reassembly_count;
+            }
             s.decisions.record(frame.number, frame.rtp_timestamp, dequeued, 0, "dequeue");
             frame.presentation_us = source_clock.update(frame.rtp_timestamp, frame.presentation_us);
             PyroWaveFraming::Frame parsed;
@@ -847,6 +855,9 @@ void *worker(void *)
                 hud.present_wait_average_us =
                     uint64_t(samples ? present_wait_ms * 1000 / samples : 0);
                 hud.present_wait_max_us = uint64_t(present_wait_max_ms * 1000);
+                hud.reassembly_average_us = reassembly_count ? reassembly_us / reassembly_count : 0;
+                hud.reassembly_max_us = reassembly_max_us;
+                hud.reassembly_samples = unsigned(reassembly_count);
                 hud.pending_frames = unsigned(depth);
                 hud.not_displayed = unsigned(s.stale.load());
                 hud.lost_packets = s.losses.load();
@@ -870,6 +881,8 @@ void *worker(void *)
                 vblanks = counters.vblanks;
                 decode_ms = render_ms = render_max_ms = 0;
                 present_wait_ms = present_wait_max_ms = 0;
+                reassembly_us = reassembly_max_us = 0;
+                reassembly_count = 0;
                 samples = 0;
             }
         }

@@ -18,11 +18,12 @@
 #define HUD_GLYPH_WIDTH 10u
 #define HUD_GLYPH_HEIGHT 10u
 #define HUD_LINE_HEIGHT 13u
-#define HUD_LINE_COUNT 13u
+#define HUD_LINE_COUNT 14u
 // The graph keeps its original 66 px label-to-baseline span after the text rows.
 #define HUD_GRAPH_TITLE_Y (4u + HUD_LINE_HEIGHT * HUD_LINE_COUNT + 4u)
 #define HUD_GRAPH_BASE_Y (HUD_GRAPH_TITLE_Y + 66u)
-#define HUD_HEIGHT (HUD_GRAPH_BASE_Y + 13u)
+// YUV 4:2:0 needs an even plane height.
+#define HUD_HEIGHT (((HUD_GRAPH_BASE_Y + 13u) + 1u) & ~1u)
 #define HUD_Y_BYTES (HUD_WIDTH * HUD_HEIGHT)
 #define HUD_UV_BYTES (HUD_WIDTH * (HUD_HEIGHT / 2u))
 #define HUD_SURFACE_BYTES (HUD_Y_BYTES + HUD_UV_BYTES)
@@ -232,6 +233,15 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
              (unsigned long long)metrics->fec_failed_packets,
              (unsigned long long)metrics->invalid_packets);
     hud_line(luma, 11, text_luma, line);
+    if (metrics->reassembly_samples)
+        snprintf(line, sizeof(line), "Reassembly: %llu.%02llu ms avg / %llu.%02llu ms max",
+                 (unsigned long long)(metrics->reassembly_average_us / 1000u),
+                 (unsigned long long)((metrics->reassembly_average_us % 1000u) / 10u),
+                 (unsigned long long)(metrics->reassembly_max_us / 1000u),
+                 (unsigned long long)((metrics->reassembly_max_us % 1000u) / 10u));
+    else
+        snprintf(line, sizeof(line), "Reassembly: N/A");
+    hud_line(luma, 12, text_luma, line);
     snprintf(line, sizeof(line),
              "%s: %llu.%02llu ms avg / %llu.%02llu ms max / wait %llu.%02llu ms",
              metrics->video_codec == 2 ? "GPU render" : "Present",
@@ -241,7 +251,7 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
              (unsigned long long)((metrics->render_max_us % 1000u) / 10u),
              (unsigned long long)(metrics->present_wait_average_us / 1000u),
              (unsigned long long)((metrics->present_wait_average_us % 1000u) / 10u));
-    hud_line(luma, 12, text_luma, line);
+    hud_line(luma, 13, text_luma, line);
     draw_graph(luma, text_luma);
 }
 

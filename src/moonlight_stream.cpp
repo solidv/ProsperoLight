@@ -710,7 +710,7 @@ typedef struct native_renderer_state
     moonlight::BandwidthWindow bandwidth;
     moonlight::RateWindow packet_rate;
     uint64_t rtp_packet_count{}, rtp_fec_recovered{}, rtp_fec_failed{}, rtp_invalid{};
-    moonlight::WindowedTiming decode_window, queue_window;
+    moonlight::WindowedTiming decode_window, queue_window, reassembly_window;
     moonlight::CatchUpGuard catchup;
     moonlight::TimingHistogram copy_timing, decode_timing, queue_timing, reassembly_timing;
     moonlight::TimingHistogram ready_timing, flush_timing, host_timing;
@@ -1858,6 +1858,9 @@ static void snapshot_hud_metrics(const native_renderer_state_t *state, int pendi
     hud->decode_p95_us = state->decode_window.last_p95_us;
     hud->queue_delay_average_us = state->queue_window.last_mean_us;
     hud->queue_delay_max_us = state->queue_window.last_max_us;
+    hud->reassembly_average_us = state->reassembly_window.last_mean_us;
+    hud->reassembly_max_us = state->reassembly_window.last_max_us;
+    hud->reassembly_samples = state->reassembly_window.last_count;
     hud->pending_frames = pending > 0 ? (uint32_t)pending : 0;
     hud->bitrate_kbps = state->bandwidth.average_kbps;
     hud->peak_bitrate_kbps = state->bandwidth.peak_kbps;
@@ -2683,6 +2686,9 @@ static int decode_access_unit(native_renderer_state_t *state, PDECODE_UNIT decod
     if (!moonlight::record_reassembly(state->reassembly_timing, decode_unit->receiveTimeUs,
                                       decode_unit->enqueueTimeUs, callback_network_us))
         ++state->reassembly_invalid_samples;
+    else
+        state->reassembly_window.add(arrival_us,
+                                     decode_unit->enqueueTimeUs - decode_unit->receiveTimeUs);
     elapsed =
         callback_network_us > network_enqueue_us ? callback_network_us - network_enqueue_us : 0;
     state->queue_timing.add(elapsed);
