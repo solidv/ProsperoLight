@@ -203,6 +203,12 @@ class ToolTests(unittest.TestCase):
             overlay,
         )
         self.assertIn('"Reassembly: N/A"', overlay)
+        self.assertIn(
+            '"Queue: %u frames now / avg %llu.%02llu ms / max %llu.%02llu ms"',
+            overlay,
+        )
+        self.assertNotIn("delay: N/A", overlay)
+        self.assertIn("if (metrics->video_codec != 2)", overlay)
         self.assertIn("hud_line(luma, 13, text_luma, line);", overlay)
         self.assertIn("!metrics->host_latency_samples", overlay)
 

@@ -141,13 +141,16 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
     memset(luma, 76, HUD_Y_BYTES);
     memset(surface + HUD_Y_BYTES, 128, HUD_UV_BYTES);
 
-    snprintf(line, sizeof(line), "Video stream: %ux%u %u.%02u FPS (Codec: %s%s) / slices %u of %u",
-             video_width, video_height, metrics->incoming_fps_x100 / 100u,
-             metrics->incoming_fps_x100 % 100u,
+    char slices[48] = "";
+    if (metrics->video_codec != 2)
+        snprintf(slices, sizeof(slices), " / slices %u of %u", metrics->slices_observed,
+                 metrics->slices_requested);
+    snprintf(line, sizeof(line), "Video stream: %ux%u %u.%02u FPS (Codec: %s%s)%s", video_width,
+             video_height, metrics->incoming_fps_x100 / 100u, metrics->incoming_fps_x100 % 100u,
              metrics->video_codec == 2 ? "PyroWave"
              : metrics->video_codec    ? "HEVC"
                                        : "H.264",
-             hdr ? " / HDR" : "", metrics->slices_observed, metrics->slices_requested);
+             hdr ? " / HDR" : "", slices);
     hud_line(luma, 0, text_luma, line);
     snprintf(line, sizeof(line), "Output %ux%u %u.%02u Hz / %s / VSync %s / reserve %llu us%s",
              output_width, output_height, output_refresh_x100 / 100u, output_refresh_x100 % 100u,
@@ -212,10 +215,7 @@ inline void refresh_hud_surface(uint8_t *surface, const native_agc_metrics_t *me
                  metrics->host_max_tenths_ms / 10u, metrics->host_max_tenths_ms % 10u,
                  metrics->host_average_tenths_ms / 10u, metrics->host_average_tenths_ms % 10u);
     hud_line(luma, 8, text_luma, line);
-    snprintf(line, sizeof(line),
-             metrics->video_codec == 2
-                 ? "Queue: %u frames now / delay: N/A"
-                 : "Queue: %u frames now / avg %llu.%02llu ms / max %llu.%02llu ms",
+    snprintf(line, sizeof(line), "Queue: %u frames now / avg %llu.%02llu ms / max %llu.%02llu ms",
              metrics->pending_frames, (unsigned long long)(metrics->queue_delay_average_us / 1000u),
              (unsigned long long)((metrics->queue_delay_average_us % 1000u) / 10u),
              (unsigned long long)(metrics->queue_delay_max_us / 1000u),

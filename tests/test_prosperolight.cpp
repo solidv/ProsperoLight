@@ -62,6 +62,8 @@ TEST(Performance, HudRendersStreamBitratePacketAndPresentationMetrics)
     metrics.reassembly_samples = 7;
     metrics.reassembly_average_us = 4100;
     metrics.reassembly_max_us = 9800;
+    metrics.queue_delay_average_us = 1200;
+    metrics.queue_delay_max_us = 4300;
     metrics.render_average_us = 2310;
     metrics.render_max_us = 8700;
     metrics.present_wait_average_us = 430;
